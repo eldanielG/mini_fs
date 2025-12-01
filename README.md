@@ -19,6 +19,7 @@ Mini sistema de arquivos em C com interface interativa. Nesta versão, as opera�
 - `mv <origem> <destino>`: renomeia o arquivo no diretório atual.
 - `rm <arquivo>`: remove o arquivo.
 - `chmod <arquivo> <permissao>`: altera permissões (ver seção abaixo).
+- `ls`: lista todos os arquivos e subdiretórios do diretório atual, mostrando nome e tipo (`<DIR>` ou `<FILE>`).
 
 ## Sobre `chmod` no Windows
 
@@ -49,12 +50,20 @@ Sequência de operações comuns:
 3. `touch arquivo.txt`
 4. `echo arquivo.txt conteudo_com_espacos_usa_underscore`
 5. `cat arquivo.txt`
+6. `cd ..` (volta ao diretório pai)
+7. `ls` (lista conteúdo do diretório atual)
+
+## Otimizações Implementadas
+
+- **Buffers de I/O de 64 KiB**: operações de leitura/escrita (`cat`, `echo`, `cp`) usam buffers grandes e `setvbuf` para minimizar chamadas ao sistema e aumentar throughput.
+- **Concatenação manual de paths**: substituição de `snprintf` por `memcpy` em operações de montagem de caminhos, reduzindo overhead de formatação.
+- **API nativa do Windows**: `ls` usa `FindFirstFileA`/`FindNextFileA` para listagem eficiente de diretórios.
 
 ## Limitações e Próximos Passos
 
-- Não há listagem (`ls`) de arquivos/diretórios no menu.
 - Navegação e operações são somente no diretório atual (sem caminhos com barras).
-- Podemos adicionar `ls` e suporte opcional a caminhos relativos se necessário.
+- Entrada de conteúdo com espaços requer uso de `_` (underscore).
+- Possíveis melhorias futuras: suporte a wide-char (Unicode), entrada com `fgets`, caminhos relativos completos.
 
 ## Contribuições
 
