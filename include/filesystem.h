@@ -11,6 +11,7 @@ int cp(const char *source, const char *destination);
 int mv(const char *source, const char *destination);
 int rm(const char *filename);
 int chmod(const char *filename, int permissions);
+int ls();
 int init_file_system();
 int free_file_system();
 

@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <direct.h>   // _getcwd, _mkdir
 #include <errno.h>
+#include <windows.h>  // FindFirstFile, FindNextFile
 #include "../include/filesystem.h"
 
 #ifndef PATH_MAX
@@ -15,10 +16,17 @@ static char current_path[PATH_MAX];
 
 static int join_path(char *dst, size_t dstsz, const char *base, const char *name) {
     size_t blen = strlen(base);
+    size_t nlen = strlen(name);
     int needs_sep = (blen > 0 && base[blen - 1] != '/' && base[blen - 1] != '\\');
-    if (snprintf(dst, dstsz, needs_sep ? "%s/%s" : "%s%s", base, name) >= (int)dstsz) {
-        return -1;
+    size_t total = blen + (needs_sep ? 1 : 0) + nlen;
+    if (total + 1 > dstsz) return -1;
+    memcpy(dst, base, blen);
+    size_t pos = blen;
+    if (needs_sep) {
+        dst[pos++] = '/';
     }
+    memcpy(dst + pos, name, nlen);
+    dst[pos + nlen] = '\0';
     return 0;
 }
 
@@ -119,8 +127,19 @@ int echo(const char *name, const char *content) {
 
     FILE *fp = fopen(path, "wb");
     if (!fp) return -1;
+    setvbuf(fp, NULL, _IOFBF, 64 * 1024);
     size_t len = strlen(content);
-    if (len) fwrite(content, 1, len, fp);
+    if (len) {
+        const char *buf = content;
+        size_t written = 0;
+        while (written < len) {
+            size_t chunk = len - written;
+            if (chunk > 64 * 1024) chunk = 64 * 1024;
+            size_t w = fwrite(buf + written, 1, chunk, fp);
+            if (w == 0) break;
+            written += w;
+        }
+    }
     fclose(fp);
     return 0;
 }
@@ -132,7 +151,8 @@ int cat(const char *name) {
 
     FILE *fp = fopen(path, "rb");
     if (!fp) return -1;
-    char buf[1024];
+    setvbuf(fp, NULL, _IOFBF, 64 * 1024);
+    char buf[64 * 1024];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
         fwrite(buf, 1, n, stdout);
@@ -172,7 +192,9 @@ int cp(const char *source, const char *destination) {
         fclose(fp_src);
         return -1;
     }
-    char buf[4096];
+    setvbuf(fp_src, NULL, _IOFBF, 64 * 1024);
+    setvbuf(fp_dst, NULL, _IOFBF, 64 * 1024);
+    char buf[64 * 1024];
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0) {
         if (fwrite(buf, 1, n, fp_dst) != n) {
@@ -193,4 +215,27 @@ int mv(const char *source, const char *destination) {
     if (join_path(dst, sizeof(dst), current_path, destination) != 0) return -1;
     if (rename(src, dst) == 0) return 0;
     return -1;
+}
+
+int ls() {
+    char pattern[PATH_MAX];
+    if (join_path(pattern, sizeof(pattern), current_path, "*") != 0) return -1;
+
+    WIN32_FIND_DATAA ffd;
+    HANDLE hFind = FindFirstFileA(pattern, &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) return -1;
+
+    printf("\nContents of current directory:\n");
+    printf("%-30s %10s\n", "Name", "Type");
+    printf("-----------------------------------------------\n");
+
+    do {
+        if (strcmp(ffd.cFileName, ".") == 0 || strcmp(ffd.cFileName, "..") == 0)
+            continue;
+        const char *type = (ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? "<DIR>" : "<FILE>";
+        printf("%-30s %10s\n", ffd.cFileName, type);
+    } while (FindNextFileA(hFind, &ffd) != 0);
+
+    FindClose(hFind);
+    return 0;
 }

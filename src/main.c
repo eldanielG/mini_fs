@@ -14,6 +14,7 @@ void display_menu() {
     printf("7. Move/Rename File (mv)\n");
     printf("8. Delete File (rm)\n");
     printf("9. Change Permissions (chmod)\n");
+    printf("10. List Directory (ls)\n");
     printf("0. Exit\n");
     printf("Select an option: ");
 }
@@ -121,6 +122,12 @@ int main() {
                 scanf("%o", &perm);
                 int result = chmod(filename, perm);
                 printf("chmod returned: %d\n", result);
+                break;
+            }
+            case 10: {
+                int result = ls();
+                if (result != 0)
+                    printf("ls failed: %d\n", result);
                 break;
             }
             case 0:
