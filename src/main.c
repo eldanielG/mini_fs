@@ -20,7 +20,10 @@ void display_menu() {
 
 int main() {
     int choice;
-    int init_file_system();  // Inicialização do sistema de arquivos
+    if (init_file_system() != 0) {
+        fprintf(stderr, "Failed to initialize MiniFS.\n");
+        return 1;
+    }
 
     while (1) {
         display_menu();

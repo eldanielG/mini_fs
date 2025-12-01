@@ -1,330 +1,196 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <direct.h>   // _getcwd, _mkdir
+#include <errno.h>
 #include "../include/filesystem.h"
 
-// Estruturas internas para o sistema em memória
+#ifndef PATH_MAX
+#define PATH_MAX 1024
+#endif
 
-typedef struct File {
-    char name[256];
-    size_t size;
-    char type[10];
-    char created_at[20];
-    char modified_at[20];
-    int id;
-    int permissions;
-    struct File *next;
-} File;
+static char root_path[PATH_MAX];
+static char current_path[PATH_MAX];
 
-typedef struct Directory {
-    char name[256];
-    struct Directory *parent;
-    struct Directory *subdirs;
-    File *files;
-    struct Directory *next;
-} Directory;
+static int join_path(char *dst, size_t dstsz, const char *base, const char *name) {
+    size_t blen = strlen(base);
+    int needs_sep = (blen > 0 && base[blen - 1] != '/' && base[blen - 1] != '\\');
+    if (snprintf(dst, dstsz, needs_sep ? "%s/%s" : "%s%s", base, name) >= (int)dstsz) {
+        return -1;
+    }
+    return 0;
+}
 
-Directory *root = NULL;
-Directory *current_dir = NULL;
+static int is_dir(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+#ifdef S_ISDIR
+    return S_ISDIR(st.st_mode) != 0;
+#else
+    return (st.st_mode & _S_IFDIR) != 0;
+#endif
+}
 
-// ===========================
-// Inicialização do sistema
-// ===========================
+static int is_valid_component(const char *name) {
+    if (!name || !*name) return 0;
+    if (strchr(name, '/') || strchr(name, '\\')) return 0;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 0;
+    return 1;
+}
+
 int init_file_system() {
-    root = malloc(sizeof(Directory));
-    strcpy(root->name, "/");
-    root->parent = NULL;
-    root->subdirs = NULL;
-    root->files = NULL;
-    root->next = NULL;
-
-    current_dir = root;
-}
-
-// ===========================
-// Criação de diretório
-// ===========================
-int mkdir(const char *name) {
-    if (!current_dir || !name || name[0] == '\0') return -1;
-    if (strchr(name, '/')) return -1;
-
-    Directory *iter = current_dir->subdirs;
-    while (iter) {
-        if (strcmp(iter->name, name) == 0) return -1;
-        iter = iter->next;
+    if (_getcwd(root_path, sizeof(root_path)) == NULL) {
+        return -1;
     }
-
-    Directory *d = malloc(sizeof(Directory));
-    strncpy(d->name, name, sizeof(d->name));
-    d->parent = current_dir;
-    d->subdirs = NULL;
-    d->files = NULL;
-    d->next = NULL;
-
-    if (!current_dir->subdirs) {
-        current_dir->subdirs = d;
-    } else {
-        iter = current_dir->subdirs;
-        while (iter->next) iter = iter->next;
-        iter->next = d;
-    }
-
+    strncpy(current_path, root_path, sizeof(current_path));
+    current_path[sizeof(current_path) - 1] = '\0';
     return 0;
-}
-
-// ===========================
-// cd (mudar diretório atual)
-// ===========================
-int cd(const char *path) {
-    if (!current_dir) return -1;
-
-    if (strcmp(path, "/") == 0) {
-        current_dir = root;
-        return 0;
-    }
-    if (strcmp(path, "..") == 0) {
-        if (current_dir->parent)
-            current_dir = current_dir->parent;
-        return 0;
-    }
-
-    Directory *iter = current_dir->subdirs;
-    while (iter) {
-        if (strcmp(iter->name, path) == 0) {
-            current_dir = iter;
-            return 0;
-        }
-        iter = iter->next;
-    }
-
-    return -1;
-}
-
-// ===========================
-// Criar arquivo
-// ===========================
-int touch(const char *name) {
-    if (!current_dir || !name || name[0] == '\0') return -1;
-
-    File *iter = current_dir->files;
-    while (iter) {
-        if (strcmp(iter->name, name) == 0) return -1;
-        iter = iter->next;
-    }
-
-    File *f = malloc(sizeof(File));
-    strncpy(f->name, name, sizeof(f->name));
-    f->size = 0;
-
-    const char *dot = strrchr(name, '.');
-    if (dot)
-        strncpy(f->type, dot + 1, sizeof(f->type));
-    else
-        strcpy(f->type, "txt");
-
-    time_t t = time(NULL);
-    struct tm *tm_info = localtime(&t);
-    strftime(f->created_at, sizeof(f->created_at), "%Y-%m-%d %H:%M:%S", tm_info);
-    strftime(f->modified_at, sizeof(f->modified_at), "%Y-%m-%d %H:%M:%S", tm_info);
-
-    static int next_id = 1;
-    f->id = next_id++;
-    f->permissions = 0644;
-    f->next = NULL;
-
-    if (!current_dir->files)
-        current_dir->files = f;
-    else {
-        iter = current_dir->files;
-        while (iter->next) iter = iter->next;
-        iter->next = f;
-    }
-
-    return 0;
-}
-
-// ===========================
-// echo - escrever em arquivo
-// ===========================
-int echo(const char *name, const char *content) {
-    File *f = current_dir->files;
-    while (f && strcmp(f->name, name) != 0) f = f->next;
-
-    if (!f) {
-        if (touch(name) != 0) return -1;
-        f = current_dir->files;
-        while (f && strcmp(f->name, name) != 0) f = f->next;
-        if (!f) return -1;
-    }
-
-    char path[512];
-    snprintf(path, sizeof(path), ".mini_fs_data_%d.bin", f->id);
-
-    FILE *fp = fopen(path, "wb");
-    if (!fp) return -1;
-
-    size_t len = strlen(content);
-    fwrite(content, 1, len, fp);
-    fclose(fp);
-    f->size = len;
-
-    time_t t = time(NULL);
-    struct tm *tm_info = localtime(&t);
-    strftime(f->modified_at, sizeof(f->modified_at), "%Y-%m-%d %H:%M:%S", tm_info);
-
-    return 0;
-}
-
-// ===========================
-// cat - ler arquivo
-// ===========================
-int cat(const char *name) {
-    File *f = current_dir->files;
-    while (f && strcmp(f->name, name) != 0) f = f->next;
-    if (!f) return -1;
-
-    char path[512];
-    snprintf(path, sizeof(path), ".mini_fs_data_%d.bin", f->id);
-
-    FILE *fp = fopen(path, "rb");
-    if (!fp) return 0;
-
-    char buf[1024];
-    size_t n;
-    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
-        fwrite(buf, 1, n, stdout);
-
-    fclose(fp);
-    return 0;
-}
-
-// ===========================
-// rm - remover arquivo
-// ===========================
-int rm(const char *name) {
-    File *f = current_dir->files, *prev = NULL;
-    while (f && strcmp(f->name, name) != 0) {
-        prev = f;
-        f = f->next;
-    }
-    if (!f) return -1;
-
-    char path[512];
-    snprintf(path, sizeof(path), ".mini_fs_data_%d.bin", f->id);
-    remove(path);
-
-    if (prev)
-        prev->next = f->next;
-    else
-        current_dir->files = f->next;
-
-    free(f);
-    return 0;
-}
-
-// ===========================
-// chmod
-// ===========================
-int chmod(const char *name, int permissions) {
-    if (permissions < 0 || permissions > 0777) return -1;
-
-    File *f = current_dir->files;
-    while (f && strcmp(f->name, name) != 0) f = f->next;
-    if (!f) return -1;
-
-    f->permissions = permissions;
-    return 0;
-}
-
-// ===========================
-// Liberar memória
-// ===========================
-int free_dir(Directory *dir) {
-    File *f = dir->files;
-    while (f) {
-        File *nextf = f->next;
-        char path[512];
-        snprintf(path, sizeof(path), ".mini_fs_data_%d.bin", f->id);
-        remove(path);
-        free(f);
-        f = nextf;
-    }
-
-    Directory *d = dir->subdirs;
-    while (d) {
-        Directory *nextd = d->next;
-        free_dir(d);
-        d = nextd;
-    }
-    free(dir);
 }
 
 int free_file_system() {
-    if (!root) return;
-    free_dir(root);
-    root = NULL;
+    // Nada para liberar no backend do SO
+    return 0;
+}
+
+int mkdir(const char *name) {
+    if (!is_valid_component(name)) return -1;
+    char path[PATH_MAX];
+    if (join_path(path, sizeof(path), current_path, name) != 0) return -1;
+
+    if (_mkdir(path) == 0) return 0;
+    // Se já existe e é diretório, considere erro (mantendo contrato antigo)
+    return -1;
+}
+
+int cd(const char *path) {
+    if (!path) return -1;
+    if (strcmp(path, "/") == 0) {
+        strncpy(current_path, root_path, sizeof(current_path));
+        current_path[sizeof(current_path) - 1] = '\0';
+        return 0;
+    }
+    if (strcmp(path, "..") == 0) {
+        // Não subir acima do root
+        if (strcmp(current_path, root_path) == 0) return 0;
+        char *p = strrchr(current_path, '/');
+        char *q = strrchr(current_path, '\\');
+        char *last = p > q ? p : q;
+        if (!last) return 0;
+        *last = '\0';
+        if (current_path[0] == '\0') {
+            strncpy(current_path, root_path, sizeof(current_path));
+            current_path[sizeof(current_path) - 1] = '\0';
+        }
+        // Garantir que não passou do root
+        if (strncmp(current_path, root_path, strlen(root_path)) != 0) {
+            strncpy(current_path, root_path, sizeof(current_path));
+            current_path[sizeof(current_path) - 1] = '\0';
+        }
+        return 0;
+    }
+    if (!is_valid_component(path)) return -1;
+
+    char candidate[PATH_MAX];
+    if (join_path(candidate, sizeof(candidate), current_path, path) != 0) return -1;
+    if (!is_dir(candidate)) return -1;
+
+    strncpy(current_path, candidate, sizeof(current_path));
+    current_path[sizeof(current_path) - 1] = '\0';
+    return 0;
+}
+
+int touch(const char *name) {
+    if (!is_valid_component(name)) return -1;
+    char path[PATH_MAX];
+    if (join_path(path, sizeof(path), current_path, name) != 0) return -1;
+
+    FILE *fp = fopen(path, "ab");
+    if (!fp) return -1;
+    fclose(fp);
+    return 0;
+}
+
+int echo(const char *name, const char *content) {
+    if (!is_valid_component(name)) return -1;
+    if (!content) content = "";
+    char path[PATH_MAX];
+    if (join_path(path, sizeof(path), current_path, name) != 0) return -1;
+
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return -1;
+    size_t len = strlen(content);
+    if (len) fwrite(content, 1, len, fp);
+    fclose(fp);
+    return 0;
+}
+
+int cat(const char *name) {
+    if (!is_valid_component(name)) return -1;
+    char path[PATH_MAX];
+    if (join_path(path, sizeof(path), current_path, name) != 0) return -1;
+
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return -1;
+    char buf[1024];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
+        fwrite(buf, 1, n, stdout);
+    }
+    fclose(fp);
+    return 0;
+}
+
+int rm(const char *name) {
+    if (!is_valid_component(name)) return -1;
+    char path[PATH_MAX];
+    if (join_path(path, sizeof(path), current_path, name) != 0) return -1;
+    if (remove(path) == 0) return 0;
+    return -1;
+}
+
+int chmod(const char *name, int permissions) {
+    if (!is_valid_component(name)) return -1;
+    if (permissions < 0 || permissions > 0777) return -1;
+    char path[PATH_MAX];
+    if (join_path(path, sizeof(path), current_path, name) != 0) return -1;
+    if (_chmod(path, permissions) == 0) return 0; // _chmod está disponível via <io.h>, porém ucrt64 também mapeia chmod
+    if (chmod(path, permissions) == 0) return 0;
+    return -1;
 }
 
 int cp(const char *source, const char *destination) {
-    File *fsrc = current_dir->files;
-    while (fsrc && strcmp(fsrc->name, source) != 0) fsrc = fsrc->next;
-    if (!fsrc) return -1;
+    if (!is_valid_component(source) || !is_valid_component(destination)) return -1;
+    char src[PATH_MAX], dst[PATH_MAX];
+    if (join_path(src, sizeof(src), current_path, source) != 0) return -1;
+    if (join_path(dst, sizeof(dst), current_path, destination) != 0) return -1;
 
-    File *f = current_dir->files;
-    while (f) {
-        if (strcmp(f->name, destination) == 0) return -1;
-        f = f->next;
+    FILE *fp_src = fopen(src, "rb");
+    if (!fp_src) return -1;
+    FILE *fp_dst = fopen(dst, "wb");
+    if (!fp_dst) {
+        fclose(fp_src);
+        return -1;
     }
-
-    File *fdst = malloc(sizeof(File));
-    memcpy(fdst, fsrc, sizeof(File));
-    strncpy(fdst->name, destination, sizeof(fdst->name));
-    fdst->next = NULL;
-
-    static int next_id = 10000;
-    fdst->id = next_id++;
-
-    char src_path[512];
-    snprintf(src_path, sizeof(src_path), ".mini_fs_data_%d.bin", fsrc->id);
-
-    char dst_path[512];
-    snprintf(dst_path, sizeof(dst_path), ".mini_fs_data_%d.bin", fdst->id);
-
-    FILE *fp_src = fopen(src_path, "rb");
-    FILE *fp_dst = fopen(dst_path, "wb");
-
-    if (fp_src && fp_dst) {
-        char buf[1024];
-        size_t n;
-        while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0)
-            fwrite(buf, 1, n, fp_dst);
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0) {
+        if (fwrite(buf, 1, n, fp_dst) != n) {
+            fclose(fp_src);
+            fclose(fp_dst);
+            return -1;
+        }
     }
-
-    if (fp_src) fclose(fp_src);
-    if (fp_dst) fclose(fp_dst);
-
-    if (!current_dir->files)
-        current_dir->files = fdst;
-    else {
-        File *iter = current_dir->files;
-        while (iter->next) iter = iter->next;
-        iter->next = fdst;
-    }
-
+    fclose(fp_src);
+    fclose(fp_dst);
     return 0;
 }
 
 int mv(const char *source, const char *destination) {
-    File *f = current_dir->files;
-    while (f && strcmp(f->name, source) != 0) f = f->next;
-    if (!f) return -1;
-
-    File *check = current_dir->files;
-    while (check) {
-        if (strcmp(check->name, destination) == 0) return -1;
-        check = check->next;
-    }
-
-    strncpy(f->name, destination, sizeof(f->name));
-    return 0;
+    if (!is_valid_component(source) || !is_valid_component(destination)) return -1;
+    char src[PATH_MAX], dst[PATH_MAX];
+    if (join_path(src, sizeof(src), current_path, source) != 0) return -1;
+    if (join_path(dst, sizeof(dst), current_path, destination) != 0) return -1;
+    if (rename(src, dst) == 0) return 0;
+    return -1;
 }
