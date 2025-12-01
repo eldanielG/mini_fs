@@ -1,11 +1,21 @@
-// This file serves as a public interface for the file system, allowing other modules to access the defined structures and functions.
-
 #ifndef FILESYSTEM_H
 #define FILESYSTEM_H
 
 #include <time.h>
 
-// Define constants for permissions
+// Funções para manipulação do sistema de arquivos
+int mkdir(const char *path);
+int cd(const char *path);
+int touch(const char *filename);
+int echo(const char *filename, const char *content);
+int cat(const char *filename);
+int cp(const char *source, const char *destination);
+int mv(const char *source, const char *destination);
+int rm(const char *filename);
+int chmod(const char *filename, int permissions);
+int init_file_system();
+int free_file_system();
+
 #define PERM_READ  0b100
 #define PERM_WRITE 0b010
 #define PERM_EXEC  0b001
@@ -29,16 +39,5 @@ typedef struct Directory {
     struct Directory *next;          // Pointer to next sibling directory
     FileMetadata *files;             // Pointer to files in the directory
 } Directory;
-
-// Function prototypes
-void mkdir(const char *path);
-void cd(const char *path);
-void touch(const char *filename);
-void echo(const char *filename, const char *content);
-void cat(const char *filename);
-void cp(const char *source, const char *destination);
-void mv(const char *source, const char *destination);
-void rm(const char *filename);
-void chmod(const char *filename, int permissions);
 
 #endif // FILESYSTEM_H

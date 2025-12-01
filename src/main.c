@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "filesystem.h"
+#include "../include/filesystem.h"
 
 void display_menu() {
     printf("\n=== Mini File System ===\n");
@@ -20,7 +20,7 @@ void display_menu() {
 
 int main() {
     int choice;
-    init_file_system();  // Inicialização do sistema de arquivos
+    int init_file_system();  // Inicialização do sistema de arquivos
 
     while (1) {
         display_menu();

@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "filesystem.h"
+#include "../include/filesystem.h"
 
 // Estruturas internas para o sistema em memória
 
@@ -30,7 +30,7 @@ Directory *current_dir = NULL;
 // ===========================
 // Inicialização do sistema
 // ===========================
-void init_file_system() {
+int init_file_system() {
     root = malloc(sizeof(Directory));
     strcpy(root->name, "/");
     root->parent = NULL;
@@ -239,7 +239,7 @@ int chmod(const char *name, int permissions) {
 // ===========================
 // Liberar memória
 // ===========================
-void free_dir(Directory *dir) {
+int free_dir(Directory *dir) {
     File *f = dir->files;
     while (f) {
         File *nextf = f->next;
@@ -259,7 +259,7 @@ void free_dir(Directory *dir) {
     free(dir);
 }
 
-void free_file_system() {
+int free_file_system() {
     if (!root) return;
     free_dir(root);
     root = NULL;
