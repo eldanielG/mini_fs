@@ -1,18 +1,22 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude
+CFLAGS = -Wall -Wextra -g -Iinclude
+LDFLAGS = 
 SRC = src/main.c src/filesystem.c
 OBJ = $(SRC:.c=.o)
-TARGET = mini_fs
+TARGET = mini_fs.exe
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(CC) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	del /Q src\*.o $(TARGET) 2>nul || rm -f $(OBJ) $(TARGET) 2>/dev/null || true
 
-.PHONY: all clean
+run: $(TARGET)
+	.\$(TARGET)
+
+.PHONY: all clean run

@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "filesystem.h"
+#include "../include/filesystem.h"
 
 void display_menu() {
     printf("\n=== Mini File System ===\n");
@@ -14,13 +14,17 @@ void display_menu() {
     printf("7. Move/Rename File (mv)\n");
     printf("8. Delete File (rm)\n");
     printf("9. Change Permissions (chmod)\n");
+    printf("10. List Directory (ls)\n");
     printf("0. Exit\n");
     printf("Select an option: ");
 }
 
 int main() {
     int choice;
-    init_file_system();  // Inicialização do sistema de arquivos
+    if (init_file_system() != 0) {
+        fprintf(stderr, "Failed to initialize MiniFS.\n");
+        return 1;
+    }
 
     while (1) {
         display_menu();
@@ -118,6 +122,12 @@ int main() {
                 scanf("%o", &perm);
                 int result = chmod(filename, perm);
                 printf("chmod returned: %d\n", result);
+                break;
+            }
+            case 10: {
+                int result = ls();
+                if (result != 0)
+                    printf("ls failed: %d\n", result);
                 break;
             }
             case 0:
